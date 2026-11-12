@@ -42,6 +42,63 @@ describe("access control", () => {
   });
 });
 
+
+
+describe("live platform endpoints", () => {
+  test("roles come from the backend permission map", async () => {
+    const sup = await H.adminCookie("SUPER_ADMIN");
+    const r = await call("GET", "/superadmin/roles", { cookie: sup.cookie });
+    expect(r.status).toBe(200);
+    expect(r.json.permissions).toContain("ERP_VIEW");
+    expect(r.json.roles.map((x) => x.id)).toEqual(expect.arrayContaining(["SUPER_ADMIN", "ERP_ADMIN", "ERP_OPERATOR", "ERP_VIEWER", "ADMIN"]));
+  });
+
+  test("network and onboarding endpoints return database rows only", async () => {
+    const sup = await H.adminCookie("SUPER_ADMIN");
+    await seedDistributor({ status: "pending", name: "Live Pending Distributor" });
+    await seedDistributor({ status: "active", name: "Live Active Distributor" });
+    const all = await call("GET", "/superadmin/distributors", { cookie: sup.cookie });
+    expect(all.status).toBe(200);
+    expect(all.json).toHaveLength(2);
+    expect(all.json.map((x) => x.name)).toEqual(expect.arrayContaining(["Live Pending Distributor", "Live Active Distributor"]));
+    const pending = await call("GET", "/superadmin/onboarding", { cookie: sup.cookie });
+    expect(pending.status).toBe(200);
+    expect(pending.json).toHaveLength(1);
+    expect(pending.json[0].business).toBe("Live Pending Distributor");
+  });
+});
+
+describe("Super Admin admin creation", () => {
+  test("only a Super Admin can create an admin account and password is hashed", async () => {
+    const sup = await H.adminCookie("SUPER_ADMIN");
+    const body = { name: "Jiban Jena", email: "jiban.admin@example.com", password: "Strong-Admin-Password-123", role: "ERP_ADMIN" };
+    const r = await call("POST", "/superadmin/admins", { cookie: sup.cookie, body });
+    expect(r.status).toBe(201);
+    expect(r.json.admin).toMatchObject({ name: body.name, email: body.email, role: "ERP_ADMIN", isActive: true });
+    const saved = await db.AdminUser.findOne({ where: { email: body.email } });
+    expect(saved.password_hash).not.toBe(body.password);
+    expect(await require("bcryptjs").compare(body.password, saved.password_hash)).toBe(true);
+    const duplicate = await call("POST", "/superadmin/admins", { cookie: sup.cookie, body });
+    expect(duplicate.status).toBe(409);
+  });
+
+  test("non-super-admin cannot create admin accounts", async () => {
+    const adm = await H.adminCookie("ADMIN");
+    const r = await call("POST", "/superadmin/admins", {
+      cookie: adm.cookie,
+      body: { name: "Blocked", email: "blocked@example.com", password: "Strong-Admin-Password-123", role: "ERP_VIEWER" },
+    });
+    expect(r.status).toBe(403);
+  });
+
+  test("invalid roles and short passwords are rejected", async () => {
+    const sup = await H.adminCookie("SUPER_ADMIN");
+    const base = { name: "Valid Name", email: "valid@example.com", password: "Strong-Admin-Password-123", role: "ERP_ADMIN" };
+    expect((await call("POST", "/superadmin/admins", { cookie: sup.cookie, body: { ...base, role: "FAKE_ROLE" } })).status).toBe(400);
+    expect((await call("POST", "/superadmin/admins", { cookie: sup.cookie, body: { ...base, email: "short@example.com", password: "short" } })).status).toBe(400);
+  });
+});
+
 describe("overview", () => {
   test("returns correct counts per admin and totals, never password_hash", async () => {
     const sup = await H.adminCookie("SUPER_ADMIN");

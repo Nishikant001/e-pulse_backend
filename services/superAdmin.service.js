@@ -78,4 +78,63 @@ async function listAdminDistributors(db, rawId) {
   };
 }
 
-module.exports = { getOverview, listAdminDistributors };
+
+async function listNetworkDistributors(db) {
+  const rows = await db.Distributor.findAll({
+    attributes: ["id", "distributor_code", "name", "city", "region", "status", "created_by_admin_id", "createdAt"],
+    order: [["createdAt", "DESC"], ["id", "DESC"]],
+  });
+  const adminIds = [...new Set(rows.map((r) => Number(r.created_by_admin_id)).filter(Boolean))];
+  const admins = adminIds.length
+    ? await db.AdminUser.findAll({ where: { id: adminIds }, attributes: ["id", "name", "email"] })
+    : [];
+  const byId = new Map(admins.map((a) => [Number(a.id), a]));
+  const customerCounts = rows.length
+    ? await db.Customer.findAll({
+        attributes: ["distributor_id", [db.sequelize.fn("COUNT", db.sequelize.col("id")), "count"]],
+        where: { distributor_id: rows.map((r) => Number(r.id)) },
+        group: ["distributor_id"],
+        raw: true,
+      })
+    : [];
+  const countByDistributor = new Map(customerCounts.map((r) => [Number(r.distributor_id), num(r.count)]));
+  return rows.map((d) => {
+    const owner = byId.get(Number(d.created_by_admin_id));
+    return {
+      id: Number(d.id),
+      code: d.distributor_code || null,
+      name: d.name || "",
+      city: d.city || null,
+      region: d.region || null,
+      owner: owner ? owner.name : null,
+      ownerEmail: owner ? owner.email : null,
+      retailers: countByDistributor.get(Number(d.id)) || 0,
+      status: d.status || "pending",
+      createdAt: iso(d.createdAt),
+    };
+  });
+}
+
+async function listOnboardingRequests(db) {
+  const rows = await db.Distributor.findAll({
+    where: { status: "pending" },
+    attributes: ["id", "distributor_code", "name", "contact_person", "email", "city", "region", "tax_no", "createdAt"],
+    order: [["createdAt", "ASC"], ["id", "ASC"]],
+    limit: 1000,
+  });
+  return rows.map((d) => ({
+    id: Number(d.id),
+    code: d.distributor_code || null,
+    business: d.name || "",
+    contact: d.contact_person || null,
+    email: d.email || null,
+    city: d.city || null,
+    region: d.region || null,
+    taxNumber: d.tax_no || null,
+    submittedAt: iso(d.createdAt),
+    status: "pending",
+  }));
+}
+
+module.exports = { getOverview, listAdminDistributors, listNetworkDistributors, listOnboardingRequests };
+

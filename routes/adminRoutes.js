@@ -32,6 +32,10 @@ router.get("/dashboard/summary", requireAdmin, policies.report, adminDashboard.s
 
 // ── Super Admin dashboard (Phase 25): SUPER_ADMIN role only. ──
 router.get("/superadmin/overview", requireAdmin, requireSuperAdmin, superAdmin.overview);
+router.post("/superadmin/admins", requireAdmin, requireSuperAdmin, superAdmin.createAdmin);
+router.get("/superadmin/roles", requireAdmin, requireSuperAdmin, superAdmin.roles);
+router.get("/superadmin/distributors", requireAdmin, requireSuperAdmin, superAdmin.networkDistributors);
+router.get("/superadmin/onboarding", requireAdmin, requireSuperAdmin, superAdmin.onboardingRequests);
 router.get("/superadmin/admins/:id/distributors", requireAdmin, requireSuperAdmin, superAdmin.adminDistributors);
 
 // ── Sales (Phase 4): orders, invoices, secondary sales. Every route requires an Admin session. ──
